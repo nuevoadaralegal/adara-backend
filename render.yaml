@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: adara-ia-backend
+    env: python
+    buildCommand: ""
+    startCommand: "python app.py"
+    plan: free
+    envVars:
+      - key: API_KEY
+        sync: false
