@@ -6,7 +6,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 API_KEY = "AIzaSyCk99OoL2D6XnmuXQDqLyq8EirQ1nuQ9-c"  # Clave insertada directamente
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-preview-05-20:generateContent?key={API_KEY}"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={API_KEY}"
 
 @app.route("/api/conclusiones", methods=["POST"])
 def conclusiones():
