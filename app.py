@@ -13,7 +13,7 @@ def conclusiones():
     data = request.json
     texto = data.get("texto", "")
     prompt = (
-        "Actúa como analista legal. Analiza el siguiente conjunto de datos generado por una herramienta informática. "
+        "Actúa como analista legal. Analiza el siguiente conjunto de datos generados. "
         "Elabora unas conclusiones razonadas y profesionales, pero indica claramente que el análisis ha sido realizado por medios automáticos "
         "y que para un asesoramiento completo debe contactarse con Adara Legal:\n\n" + texto
     )
