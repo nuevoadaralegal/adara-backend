@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
+import os
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-API_KEY = "AIzaSyCk99OoL2D6XnmuXQDqLyq8EirQ1nuQ9-c"  # Clave insertada directamente
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    raise ValueError("La variable de entorno API_KEY no está definida")
+
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={API_KEY}"
 
 @app.route("/api/conclusiones", methods=["POST"])
