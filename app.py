@@ -4,7 +4,7 @@ import requests
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 API_KEY = os.getenv("AIzaSyCk99OoL2D6XnmuXQDqLyq8EirQ1nuQ9-c")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-preview-05-20:generateContent?key={API_KEY}"
@@ -35,3 +35,4 @@ def wake():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
