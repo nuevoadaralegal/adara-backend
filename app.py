@@ -28,5 +28,10 @@ def conclusiones():
     response = requests.post(GEMINI_URL, json=payload)
     return jsonify(response.json())
 
+
+@app.route("/wake", methods=["GET"])
+def wake():
+    return jsonify({"status": "awake"}), 200
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
