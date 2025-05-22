@@ -4,9 +4,9 @@ import requests
 import os
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)
 
-API_KEY = os.getenv("AIzaSyCk99OoL2D6XnmuXQDqLyq8EirQ1nuQ9-c")
+API_KEY = os.getenv("API_KEY")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={API_KEY}"
 
 @app.route("/api/conclusiones", methods=["POST"])
@@ -28,11 +28,5 @@ def conclusiones():
     response = requests.post(GEMINI_URL, json=payload)
     return jsonify(response.json())
 
-
-@app.route("/wake", methods=["GET"])
-def wake():
-    return jsonify({"status": "awake"}), 200
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
