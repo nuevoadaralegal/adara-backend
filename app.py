@@ -4,84 +4,70 @@ import requests
 import os
 
 app = Flask(__name__)
+# Permitimos CORS para que tu web de WordPress pueda hablar con este servidor
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
-    raise ValueError("La variable de entorno API_KEY no está definida")
+    raise ValueError("Falta la API_KEY")
 
-# Usamos v1beta para soporte multimodal avanzado en Gemini 3
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-3-flash-preview:generateContent"
-)
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
 
-@app.route("/api/conclusiones", methods=["POST"])
-def conclusiones():
+# --- CONTEXTO DE ADARA LEGAL (Extraído de tu Landing) ---
+CONTEXTO_ADARA = """
+ERES: El Asistente Virtual IA de 'Adara Legal', un despacho boutique en Madrid experto en Ley de Segunda Oportunidad.
+TU TONO: Profesional, empático, jurídico pero accesible, y tranquilizador.
+EQUIPO: Miguel Ángel Marchena (Socio Director), David Alonso (Procesal), Tatiana García (Proyectos).
+UBICACIÓN: Calle del General Díaz Porlier, 80 1º AB, 28006 Madrid.
+CONTACTO: 91 547 59 19 | 666 33 86 04 | administracion@adaralegal.es.
+
+REGLA DE ORO (AVISO LEGAL):
+JAMÁS des asesoramiento jurídico vinculante. Siempre debes decir que tu respuesta es informativa.
+AL FINAL DE CADA RESPUESTA IMPORTANTE: Invita al usuario a pedir el "Estudio de Viabilidad Gratuito" contactando con el despacho.
+
+CONOCIMIENTOS CLAVE:
+- Objetivo: Exoneración del Pasivo Insatisfecho (EPI).
+- Requisitos: Deudor de buena fe, no delitos económicos en 10 años.
+- Deuda Pública: Se puede exonerar hasta 10.000€ Hacienda y 10.000€ Seg. Social.
+- Vivienda: Adara prioriza estrategias para conservarla mediante planes de pago.
+- Duración: 6-12 meses aprox.
+"""
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
     try:
         data = request.json
-        if not data:
-            return jsonify({"error": "No se recibió JSON"}), 400
+        mensaje_usuario = data.get("mensaje", "")
+        historial = data.get("historial", []) # Para mantener el hilo de la charla (opcional)
 
-        texto = data.get("texto", "").strip()
-        # Nuevos campos para el archivo
-        archivo_b64 = data.get("archivo_base64", None) # El string largo del PDF
-        mime_type = data.get("mime_type", "application/pdf")
+        if not mensaje_usuario:
+            return jsonify({"error": "Mensaje vacío"}), 400
 
-        if not texto and not archivo_b64:
-            return jsonify({"error": "Debe enviar texto o un archivo"}), 400
-
-        # Prompt Universal (modificado ligeramente para mencionar el archivo)
-        prompt_text = (
-            "INSTRUCCIONES MAESTRAS PARA LA IA:\n"
-            "1. TU MISIÓN: Analizar la información proporcionada (texto y/o documentos adjuntos).\n"
-            "2. DETECCIÓN DE CONTEXTO: Detecta automáticamente el tema (ej: Legal/Concursal).\n"
-            "3. ADOPCIÓN DE ROL: Adopta la personalidad del mayor experto mundial en la materia.\n"
-            "4. ANÁLISIS DOCUMENTAL: Si se adjunta un documento (PDF/DOCX), analízalo en profundidad "
-            "cruzando los datos con el resumen de texto proporcionado.\n"
-            "5. FORMATO DE RESPUESTA: Informe estructurado (Diagnóstico, Puntos Fuertes, Riesgos, Conclusión).\n"
-            "   Usa HTML simple (<b>, <br>, <ul>).\n\n"
-            "--- COMIENZO DEL RESUMEN DE USUARIO ---\n"
-            f"{texto}\n"
-            "--- FIN DEL RESUMEN ---"
+        # Construimos el prompt
+        prompt = (
+            f"{CONTEXTO_ADARA}\n\n"
+            "PREGUNTA DEL USUARIO:\n"
+            f"{mensaje_usuario}\n\n"
+            "TU RESPUESTA (Breve, max 100 palabras, formato HTML simple si es necesario):"
         )
 
-        # Construimos las "partes" del mensaje
-        parts = [{"text": prompt_text}]
-
-        # Si hay archivo, lo añadimos al payload
-        if archivo_b64:
-            parts.append({
-                "inline_data": {
-                    "mime_type": mime_type,
-                    "data": archivo_b64
-                }
-            })
-
         payload = {
-            "contents": [{
-                "parts": parts
-            }]
+            "contents": [{"parts": [{"text": prompt}]}]
         }
-
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": API_KEY
-        }
-
-        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=120) # Aumentamos timeout a 120s por si el PDF es grande
-
+        
+        headers = {"Content-Type": "application/json", "x-goog-api-key": API_KEY}
+        
+        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=30)
+        
         if response.status_code != 200:
-            return jsonify({
-                "error": "Error al llamar a Gemini",
-                "status_code": response.status_code,
-                "detalle": response.text
-            }), 500
+            return jsonify({"respuesta": "Lo siento, estoy saturado. Por favor llama al 666 33 86 04."}), 200
 
-        return jsonify(response.json()), 200
+        respuesta_ia = response.json()['candidates'][0]['content']['parts'][0]['text']
+        return jsonify({"respuesta": respuesta_ia})
 
     except Exception as e:
-        return jsonify({"error": "Error interno del servidor", "detalle": str(e)}), 500
+        print(e)
+        return jsonify({"respuesta": "Error técnico. Contacta con nosotros directamente."})
 
 @app.route("/wake", methods=["GET"])
 def wake():
