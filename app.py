@@ -4,15 +4,13 @@ import requests
 import os
 
 app = Flask(__name__)
-# Permitir peticiones desde cualquier origen
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# 1. Leer API KEY
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise ValueError("La variable de entorno API_KEY no está definida")
 
-# 2. URL segura (v1beta)
+# Usamos v1beta para soporte multimodal avanzado en Gemini 3
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/gemini-3-flash-preview:generateContent"
@@ -22,44 +20,48 @@ GEMINI_URL = (
 def conclusiones():
     try:
         data = request.json
-
         if not data:
             return jsonify({"error": "No se recibió JSON"}), 400
 
         texto = data.get("texto", "").strip()
+        # Nuevos campos para el archivo
+        archivo_b64 = data.get("archivo_base64", None) # El string largo del PDF
+        mime_type = data.get("mime_type", "application/pdf")
 
-        if not texto:
-            return jsonify({"error": "Campo 'texto' vacío o no enviado"}), 400
+        if not texto and not archivo_b64:
+            return jsonify({"error": "Debe enviar texto o un archivo"}), 400
 
-        # --- AQUÍ ESTÁ EL CAMBIO: EL PROMPT UNIVERSAL ---
-        prompt = (
+        # Prompt Universal (modificado ligeramente para mencionar el archivo)
+        prompt_text = (
             "INSTRUCCIONES MAESTRAS PARA LA IA:\n"
-            "1. TU MISIÓN: Analizar el texto proporcionado a continuación.\n"
-            "2. DETECCIÓN DE CONTEXTO: Detecta automáticamente el tema, la industria y la naturaleza del texto "
-            "(ej: Legal/Concursal, Cinematográfico, Médico, Ingeniería, etc.).\n"
-            "3. ADOPCIÓN DE ROL: Adopta inmediatamente la personalidad del mayor experto mundial en esa materia detectada.\n"
-            "   - Si es legal: Sé preciso, cita leyes aplicables (como TRLC en España) y sé formal.\n"
-            "   - Si es cine: Sé creativo, crítico y analítico con la narrativa.\n"
-            "   - Si es técnico: Sé riguroso con los datos.\n"
-            "4. FORMATO DE RESPUESTA: Genera un informe estructurado que sirva para tomar decisiones.\n"
-            "   Usa esta estructura:\n"
-            "   - 🎯 **Diagnóstico del Experto:** De qué trata esto y cuál es la situación actual.\n"
-            "   - ✅ **Puntos Fuertes:** Qué está bien planteado.\n"
-            "   - ⚠️ **Riesgos o Debilidades:** Qué falla o qué podría salir mal (sé crítico).\n"
-            "   - 💡 **Conclusión Final:** Tu veredicto profesional.\n\n"
-            "5. ESTILO: Usa formato HTML simple (negritas <b>, saltos de línea <br>) para que sea fácil de leer.\n\n"
-            "--- COMIENZO DEL TEXTO A ANALIZAR ---\n"
+            "1. TU MISIÓN: Analizar la información proporcionada (texto y/o documentos adjuntos).\n"
+            "2. DETECCIÓN DE CONTEXTO: Detecta automáticamente el tema (ej: Legal/Concursal).\n"
+            "3. ADOPCIÓN DE ROL: Adopta la personalidad del mayor experto mundial en la materia.\n"
+            "4. ANÁLISIS DOCUMENTAL: Si se adjunta un documento (PDF/DOCX), analízalo en profundidad "
+            "cruzando los datos con el resumen de texto proporcionado.\n"
+            "5. FORMATO DE RESPUESTA: Informe estructurado (Diagnóstico, Puntos Fuertes, Riesgos, Conclusión).\n"
+            "   Usa HTML simple (<b>, <br>, <ul>).\n\n"
+            "--- COMIENZO DEL RESUMEN DE USUARIO ---\n"
             f"{texto}\n"
-            "--- FIN DEL TEXTO ---"
+            "--- FIN DEL RESUMEN ---"
         )
 
-        # Preparar la petición a Google
-        payload = {
-            "contents": [
-                {
-                    "parts": [{"text": prompt}]
+        # Construimos las "partes" del mensaje
+        parts = [{"text": prompt_text}]
+
+        # Si hay archivo, lo añadimos al payload
+        if archivo_b64:
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": archivo_b64
                 }
-            ]
+            })
+
+        payload = {
+            "contents": [{
+                "parts": parts
+            }]
         }
 
         headers = {
@@ -67,7 +69,7 @@ def conclusiones():
             "x-goog-api-key": API_KEY
         }
 
-        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=60)
+        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=120) # Aumentamos timeout a 120s por si el PDF es grande
 
         if response.status_code != 200:
             return jsonify({
@@ -81,11 +83,9 @@ def conclusiones():
     except Exception as e:
         return jsonify({"error": "Error interno del servidor", "detalle": str(e)}), 500
 
-
 @app.route("/wake", methods=["GET"])
 def wake():
     return jsonify({"status": "awake"}), 200
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
