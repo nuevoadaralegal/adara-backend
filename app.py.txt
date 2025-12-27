@@ -1,0 +1,148 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import requests
+import os
+
+app = Flask(__name__)
+# CORS "*" permite que TODAS tus landings (dominio A, dominio B, etc.) usen este mismo servidor
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Configuración API Key
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    # Esto asegura que falle rápido si no hay clave, para que te des cuenta
+    raise ValueError("¡Falta la variable API_KEY en Render!")
+
+# Usamos la versión beta para acceder a lo último de Gemini 3 Flash
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
+
+# --- ENDPOINT 1: CHATBOT UNIVERSAL ---
+# Este endpoint sirve para CUALQUIER área (Herencias, Mercantil, Penal, etc.)
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "JSON no recibido"}), 400
+
+        mensaje_usuario = data.get("mensaje", "")
+        
+        # AQUÍ ESTÁ LA MAGIA: Recibimos el "rol" desde la web.
+        # Si la web no envía nada, usamos un rol genérico por defecto.
+        contexto_landing = data.get("contexto", 
+            "ERES: Un abogado senior de Adara Legal. "
+            "OBJETIVO: Atender al cliente con profesionalidad y redirigirlo al despacho."
+        )
+
+        if not mensaje_usuario:
+            return jsonify({"error": "Mensaje vacío"}), 400
+
+        # Construcción del Prompt Dinámico
+        prompt = (
+            "INSTRUCCIONES DE SISTEMA (ROL):\n"
+            f"{contexto_landing}\n\n"
+            "REGLAS OBLIGATORIAS:\n"
+            "1. Eres una IA de soporte legal, NO un juez. No dictes sentencia.\n"
+            "2. Usa un tono profesional, empático y claro (evita latinismos innecesarios).\n"
+            "3. Respuestas concisas (máximo 100 palabras salvo que te pidan detalles).\n"
+            "4. SIEMPRE avisa que tu respuesta es informativa y no vinculante.\n\n"
+            "--- CONVERSACIÓN ---\n"
+            f"USUARIO: {mensaje_usuario}\n"
+            "ABOGADO IA:"
+        )
+
+        # Preparar Payload para Gemini
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        
+        headers = {
+            "Content-Type": "application/json", 
+            "x-goog-api-key": API_KEY
+        }
+        
+        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            print(f"Error Gemini: {response.text}")
+            return jsonify({"respuesta": "Lo siento, estoy teniendo problemas de conexión. Por favor, llama al despacho directamente."}), 500
+
+        # Extraer respuesta limpia
+        candidates = response.json().get('candidates', [])
+        if not candidates:
+            return jsonify({"respuesta": "No he podido generar una respuesta."}), 500
+            
+        respuesta_ia = candidates[0]['content']['parts'][0]['text']
+        return jsonify({"respuesta": respuesta_ia})
+
+    except Exception as e:
+        print(f"Error interno: {str(e)}")
+        return jsonify({"respuesta": "Error técnico en el servidor."}), 500
+
+
+# --- ENDPOINT 2: ANALIZADOR DE DOCUMENTOS/CASOS ---
+# Sirve para analizar Planes de Reestructuración, Testamentos, Contratos, Estatutos, etc.
+@app.route("/api/conclusiones", methods=["POST"])
+def conclusiones():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No se recibió JSON"}), 400
+
+        texto_usuario = data.get("texto", "")
+        archivo_b64 = data.get("archivo_base64", None)
+        mime_type = data.get("mime_type", "application/pdf")
+
+        # Contexto específico para el análisis (si se envía) o genérico
+        # Esto permite que uses este endpoint para analizar un testamento en una web y un plan PDR en otra
+        tipo_analisis = data.get("tipo_analisis", "Legal General")
+
+        if not texto_usuario and not archivo_b64:
+            return jsonify({"error": "Falta texto o archivo"}), 400
+
+        prompt_analisis = (
+            f"ACTÚA COMO: Experto Jurista Senior especializado en {tipo_analisis}.\n"
+            "TAREA: Analizar la información y/o documentación adjunta.\n"
+            "OBJETIVO: Detectar riesgos, oportunidades y puntos clave.\n"
+            "FORMATO: Informe ejecutivo con puntos clave (HTML simple).\n\n"
+            "--- DATOS A ANALIZAR ---\n"
+            f"{texto_usuario}\n"
+        )
+
+        parts = [{"text": prompt_analisis}]
+
+        if archivo_b64:
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": archivo_b64
+                }
+            })
+
+        payload = {"contents": [{"parts": parts}]}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": API_KEY}
+
+        # Timeout más largo para análisis de documentos (60s)
+        response = requests.post(GEMINI_URL, json=payload, headers=headers, timeout=60)
+
+        if response.status_code != 200:
+            return jsonify({"error": "Error al analizar", "detalle": response.text}), 500
+
+        candidates = response.json().get('candidates', [])
+        if not candidates:
+            return jsonify({"error": "Sin respuesta de la IA"}), 500
+
+        return jsonify(response.json()), 200
+
+    except Exception as e:
+        return jsonify({"error": "Error interno", "detalle": str(e)}), 500
+
+
+# --- ENDPOINT 3: WAKE UP (Para que Render no se duerma o despierte rápido) ---
+@app.route("/wake", methods=["GET"])
+def wake():
+    return jsonify({"status": "awake", "message": "Backend Adara Legal Online"}), 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
